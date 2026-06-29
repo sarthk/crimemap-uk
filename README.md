@@ -6,9 +6,9 @@ normalised per resident** — so a renter, student, or buyer can judge how safe 
 always together) and lets the user draw their own conclusions. It is a calm
 reference tool, **not** a "crime is exploding" shock piece.
 
-> **Phase 1: West Yorkshire** — live at https://sarthk.github.io/crimemap-uk/ (Leaflet + GeoJSON).
-> **Phase 2: England & Wales** — `national.html` (MapLibre GL + PMTiles, ~35k LSOAs), built &
-> verified locally. See [CLAUDE.md](CLAUDE.md) for the full brief and non-negotiable principles.
+> **Landing page — England & Wales** (`index.html`): MapLibre GL + PMTiles, ~35k LSOAs.
+> **West Yorkshire** (`west-yorkshire.html`): the original Leaflet + GeoJSON build.
+> Live at https://sarthk.github.io/crimemap-uk/ · brief in [CLAUDE.md](CLAUDE.md).
 
 ## Layout
 
@@ -104,5 +104,5 @@ Needs **tippecanoe** on `PATH` (or `CRIMEMAP_TIPPECANOE=/path/to/tippecanoe`).
 - [x] `download.py --national` — all 43 forces (505 street CSVs, 5.8 M crimes)
 - [x] National boundaries — 35,672 E&W LSOAs (paginated ArcGIS)
 - [x] `build_national.py` — per-bundle national metric → `national.pmtiles` (46 MB) + `national-details.json` (3.9 MB)
-- [x] `national.html` — MapLibre GL + PMTiles choropleth, bundle toggles, postcode search, panel, methodology. Verified in-browser.
-- [ ] Deploy national (commit tiles + push)
+- [x] National map — MapLibre GL + PMTiles choropleth, bundle toggles, postcode search, panel, methodology. Verified in-browser.
+- [x] National is the landing page (`index.html`); West Yorkshire moved to `west-yorkshire.html`. Deployed to GitHub Pages.
