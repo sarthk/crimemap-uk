@@ -84,23 +84,27 @@ def _resolve_archive_url(latest: str) -> tuple[str, int]:
 
 
 # --- REMOTE: range-based selective extraction (default) -----------------------
-def download_crime_remote(latest: str, months: list[str]) -> list[str]:
-    """Fetch ONLY the WY street CSVs for the window via HTTP Range — not the 1.6 GB whole."""
+STREET_RE = re.compile(r"(?:^|/)(\d{4}-\d{2})-([a-z0-9-]+)-street\.csv$")
+
+
+def download_crime_remote(latest: str, months: list[str], force: str | None = config.FORCE_ID) -> list[str]:
+    """Fetch street CSVs for the window via HTTP Range — one force, or ALL forces if force is None."""
     s3_url, total = _resolve_archive_url(latest)
-    _log(f"  remote zip: {s3_url}  ({total >> 20 if total else '?'} MB; range-extracting {len(months)} files)")
+    win = set(months)
     written = []
     with RemoteZip(s3_url) as z:
-        present = set(z.namelist())
-        for month in months:
-            name = f"{month}/{month}-{config.FORCE_ID}-street.csv"
-            if name not in present:
-                continue
+        targets = []
+        for n in z.namelist():
+            mm = STREET_RE.search(n)
+            if mm and mm.group(1) in win and (force is None or mm.group(2) == force):
+                targets.append((mm.group(1), mm.group(2), n))
+        _log(f"  remote zip: {s3_url}  ({total >> 20 if total else '?'} MB; range-extracting {len(targets)} files)")
+        for month, f, n in sorted(targets):
             dest_dir = config.RAW_DIR / month
             dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / f"{month}-{config.FORCE_ID}-street.csv"
-            dest.write_bytes(z.read(name))
+            dest = dest_dir / f"{month}-{f}-street.csv"
+            dest.write_bytes(z.read(n))
             written.append(f"{month}/{dest.name}")
-            _log(f"    {name}  ({dest.stat().st_size >> 10} KB)")
     return sorted(written)
 
 
@@ -222,45 +226,43 @@ def download_crime_route_b(months: list[str], poll_secs: int = 8, timeout_secs: 
     return dest
 
 
-# --- Shared: extract WY street CSVs for the window ----------------------------
-def extract_wy_street(zip_path: Path, months: set[str]) -> list[str]:
-    """Extract '<month>-west-yorkshire-street.csv' for the window into RAW_DIR/<month>/."""
-    want = re.compile(rf"(?:^|/)(\d{{4}}-\d{{2}})-{re.escape(config.FORCE_ID)}-street\.csv$")
+# --- Shared: extract street CSVs for the window -------------------------------
+def extract_street(zip_path: Path, months: set[str], force: str | None = config.FORCE_ID) -> list[str]:
+    """Extract '<month>-<force>-street.csv' (one force, or ALL forces if None) into RAW_DIR/<month>/."""
     written = []
     with zipfile.ZipFile(zip_path) as zf:
         for name in zf.namelist():
-            mm = want.search(name)
-            if not mm or mm.group(1) not in months:
+            mm = STREET_RE.search(name)
+            if not mm or mm.group(1) not in months or (force is not None and mm.group(2) != force):
                 continue
-            month = mm.group(1)
+            month, f = mm.group(1), mm.group(2)
             dest_dir = config.RAW_DIR / month
             dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / f"{month}-{config.FORCE_ID}-street.csv"
+            dest = dest_dir / f"{month}-{f}-street.csv"
             with zf.open(name) as src, open(dest, "wb") as out:
                 out.write(src.read())
             written.append(f"{month}/{dest.name}")
     return sorted(written)
 
 
-def download_crime(method: str, keep_archive: bool) -> None:
+def download_crime(method: str, keep_archive: bool, force: str | None = config.FORCE_ID) -> None:
     latest = latest_available_month()
     months = window_months(latest)
-    _log(f"Crime: latest month {latest}; window {months[0]}..{months[-1]} ({len(months)} months)")
+    scope = force if force else "ALL forces (national)"
+    _log(f"Crime [{scope}]: latest {latest}; window {months[0]}..{months[-1]} ({len(months)} months)")
     if method == "remote":
-        written = download_crime_remote(latest, months)
+        written = download_crime_remote(latest, months, force)
     else:
         zip_path = (download_crime_route_b(months) if method == "custom"
                     else download_crime_route_a(latest))
-        written = extract_wy_street(zip_path, set(months))
+        written = extract_street(zip_path, set(months), force)
         if not keep_archive and zip_path.name.startswith("_police-"):
             zip_path.unlink(missing_ok=True)
             _log(f"  removed staging archive {zip_path.name}")
-    _log(f"Extracted {len(written)} street CSV(s) into {config.RAW_DIR}:")
-    for w in written:
-        _log(f"  {w}")
+    _log(f"Extracted {len(written)} street CSV(s) into {config.RAW_DIR}")
     missing = sorted(set(months) - {w.split('/')[0] for w in written})
     if missing:
-        _log(f"  NOTE: no WY street file for {missing} (force submission gap?).")
+        _log(f"  NOTE: no street file for {missing} (submission gap?).")
 
 
 # --- Population ---------------------------------------------------------------
@@ -283,18 +285,24 @@ def main() -> int:
                     help="crime via the full 1.6 GB national archive (resumable) instead of range extraction")
     ap.add_argument("--custom", action="store_true",
                     help="crime via the targeted custom POST download (slow server-side generation)")
+    ap.add_argument("--national", action="store_true",
+                    help="ingest ALL forces (England & Wales) — Phase 2 — not just West Yorkshire")
     ap.add_argument("--keep-archive", action="store_true",
                     help="keep the staging zip instead of deleting it after extraction")
     ap.add_argument("--population", action="store_true", help="download TS001 population")
-    ap.add_argument("--all", action="store_true", help="crime (REMOTE) + population")
+    ap.add_argument("--all", action="store_true", help="crime + population")
     args = ap.parse_args()
 
     if args.population and not args.all:
         download_population()
         return 0
 
+    force = None if args.national else config.FORCE_ID
+    # Range extraction (remote) is the default for both: the single full-archive
+    # stream throttles badly on S3, whereas ~500 short range reads stay fast.
+    # --archive forces the full resumable download if you prefer one transfer.
     method = "custom" if args.custom else "archive" if args.archive else "remote"
-    download_crime(method=method, keep_archive=args.keep_archive)
+    download_crime(method=method, keep_archive=args.keep_archive, force=force)
     if args.all:
         download_population()
     return 0

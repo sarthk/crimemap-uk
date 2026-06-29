@@ -6,9 +6,9 @@ normalised per resident** — so a renter, student, or buyer can judge how safe 
 always together) and lets the user draw their own conclusions. It is a calm
 reference tool, **not** a "crime is exploding" shock piece.
 
-> **Phase 1 ships ONE region end-to-end: West Yorkshire (incl. Leeds).**
-> National coverage is Phase 2 (PMTiles + MapLibre). See [CLAUDE.md](CLAUDE.md)
-> for the full build brief and the non-negotiable principles.
+> **Phase 1: West Yorkshire** — live at https://sarthk.github.io/crimemap-uk/ (Leaflet + GeoJSON).
+> **Phase 2: England & Wales** — `national.html` (MapLibre GL + PMTiles, ~35k LSOAs), built &
+> verified locally. See [CLAUDE.md](CLAUDE.md) for the full brief and non-negotiable principles.
 
 ## Layout
 
@@ -81,4 +81,28 @@ monthly refresh *is* real-time for this domain. No streaming, no backend.
       YlOrRd, Carto Positron basemap), postcode search, detail panel (rate, stat strip, percentile
       bar, category bars, sparkline, footfall caveat), client-side bundle toggles, methodology
       dialog + OGL attribution, loading/error states. Verified in-browser.
-- [ ] Deploy to GitHub Pages
+- [x] Deployed to GitHub Pages — **https://sarthk.github.io/crimemap-uk/**
+
+## Phase 2 — England & Wales (national)
+
+Same metric and principles, scaled to all ~43 forces and ~35,000 LSOAs. The browser
+can't load 35k polygons as raw GeoJSON, so the data is tiled to **PMTiles** (tippecanoe)
+and rendered with **MapLibre GL**. Tiles carry only scalar stats (each bundle's
+rate/percentile/flag/total); `by_category` + monthly trend live in a separate
+`national-details.json` fetched lazily on click.
+
+```bash
+python pipeline/download.py --national        # all 43 forces, 12 months (range extraction)
+python pipeline/download.py --population        # (once) TS001 population
+python pipeline/build_national.py              # aggregate → metric → slim GeoJSON + details → tippecanoe
+python serve.py 8000                            # Range-capable local server (plain http.server won't do PMTiles)
+#   → open http://localhost:8000/national.html
+```
+
+Needs **tippecanoe** on `PATH` (or `CRIMEMAP_TIPPECANOE=/path/to/tippecanoe`).
+
+- [x] `download.py --national` — all 43 forces (505 street CSVs, 5.8 M crimes)
+- [x] National boundaries — 35,672 E&W LSOAs (paginated ArcGIS)
+- [x] `build_national.py` — per-bundle national metric → `national.pmtiles` (46 MB) + `national-details.json` (3.9 MB)
+- [x] `national.html` — MapLibre GL + PMTiles choropleth, bundle toggles, postcode search, panel, methodology. Verified in-browser.
+- [ ] Deploy national (commit tiles + push)

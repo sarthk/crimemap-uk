@@ -19,6 +19,13 @@ INTERIM_DIR = DATA_DIR / "interim"  # boundaries GeoJSON, population CSV (gitign
 WEB_DATA_DIR = PROJECT_DIR / "web" / "data"  # published artifact lives here (committed)
 OUTPUT_GEOJSON = WEB_DATA_DIR / "west-yorkshire.geojson"
 
+# --- Phase 2 (national) -------------------------------------------------------
+NATIONAL_BOUNDARIES_CACHE = INTERIM_DIR / "national-boundaries.geojson"
+NATIONAL_SLIM_GEOJSON = INTERIM_DIR / "national-slim.geojson"   # scalars only → tippecanoe input
+NATIONAL_PMTILES = WEB_DATA_DIR / "national.pmtiles"            # vector tiles (committed)
+NATIONAL_DETAILS = WEB_DATA_DIR / "national-details.json"       # code → {by_category, monthly} (committed)
+PMTILES_LAYER = "lsoa"                                          # tippecanoe -l → MapLibre source-layer
+
 # --- Region (Phase 1) ---------------------------------------------------------
 # police.uk force identifier as it appears in bulk-CSV filenames:
 #   <YYYY-MM>/<YYYY-MM>-<FORCE_ID>-street.csv
