@@ -1,0 +1,13 @@
+# CrimeMap UK — pipeline dependencies
+#
+# The whole Phase-1 pipeline (download → build_geojson) needs only these.
+# Because police.uk tags each crime with its LSOA code, the boundaries join is a
+# plain key-join (pandas), NOT a spatial join — so geopandas is not required.
+
+pandas>=2.2          # also pulls numpy (used for percentile/outlier maths)
+requests>=2.31
+remotezip>=0.12      # range-based selective extraction from the police.uk archive zip
+
+# --- Phase 2 only (national PMTiles tiling) ---
+# geopandas>=1.0
+# shapely>=2.0

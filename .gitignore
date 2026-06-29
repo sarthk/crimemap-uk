@@ -1,0 +1,20 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+
+# --- OS ---
+.DS_Store
+
+# --- Raw / intermediate data (large, regenerable; do NOT commit) ---
+pipeline/data/raw/
+pipeline/data/interim/
+*.zip
+
+# Keep the published map data (web/data/*.geojson IS committed for GitHub Pages)
+!web/data/
+
+# --- Node (Phase 2 / tooling only) ---
+node_modules/
