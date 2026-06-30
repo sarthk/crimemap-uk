@@ -60,6 +60,29 @@ def load_price() -> dict:
     return {str(k): int(v) for k, v in zip(s[config.PRICE_CODE_COL], s[config.PRICE_VALUE_COL])}
 
 
+def load_rent() -> dict:
+    """LAD code → latest mean monthly rent (£), from ONS PIPR."""
+    if not config.RENT_XLSX.exists():
+        _log("  (no rent file — run `python pipeline/download.py --rent`; skipping yield)")
+        return {}
+    df = pd.read_excel(config.RENT_XLSX, sheet_name=config.RENT_SHEET,
+                       header=config.RENT_HEADER_ROW, engine="openpyxl")
+    df = df[[config.RENT_TIME_COL, config.RENT_CODE_COL, config.RENT_VALUE_COL]].copy()
+    df = df[df[config.RENT_CODE_COL].astype(str).str.match(r"[EW]0[6-9]")]   # LAD codes only
+    df = df.dropna(subset=[config.RENT_VALUE_COL])
+    df = df.sort_values(config.RENT_TIME_COL).groupby(config.RENT_CODE_COL).tail(1)  # latest per LAD
+    return {str(k): float(v) for k, v in zip(df[config.RENT_CODE_COL], df[config.RENT_VALUE_COL])}
+
+
+def load_lsoa_lad() -> dict:
+    """LSOA21CD → LAD22CD (rent joins by code, not name — recon-confirmed)."""
+    if not config.LSOA_LAD_CSV.exists():
+        return {}
+    df = pd.read_csv(config.LSOA_LAD_CSV, encoding="utf-8-sig",
+                     usecols=[config.LSOA_LAD_CODE, config.LSOA_LAD_LAD], dtype=str)
+    return dict(zip(df[config.LSOA_LAD_CODE], df[config.LSOA_LAD_LAD]))
+
+
 # --- 1. Aggregate crime (all forces, incremental to bound memory) -------------
 def aggregate_national() -> tuple[pd.DataFrame, list[str]]:
     files = sorted(config.RAW_DIR.rglob("*-street.csv"))
@@ -179,6 +202,19 @@ def build_table(out: pd.DataFrame, boundaries: dict, n_months: int) -> pd.DataFr
     if n_priced:
         _log(f"  price: {n_priced}/{len(out)} LSOAs matched ({100*n_priced/len(out):.0f}%); "
              f"median £{int(out['price'].dropna().median()):,}")
+
+    # Yield (investor metric): annual mean rent (LAD) ÷ median price (LSOA).
+    rent, lsoa_lad = load_rent(), load_lsoa_lad()
+    if rent and lsoa_lad:
+        monthly = out.index.to_series().map(lsoa_lad).map(rent).astype(float)
+        out["yield"] = (monthly * 12 / out["price"] * 100).round(1)
+        out["yield_pctl"] = out["yield"].rank(pct=True).round(3)
+        ny = int(out["yield"].notna().sum())
+        _log(f"  yield: {ny}/{len(out)} LSOAs ({100*ny/len(out):.0f}%); "
+             f"median {out['yield'].dropna().median():.1f}%")
+    else:
+        out["yield"] = float("nan")
+        out["yield_pctl"] = float("nan")
     return out
 
 
@@ -186,7 +222,7 @@ def build_table(out: pd.DataFrame, boundaries: dict, n_months: int) -> pd.DataFr
 def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: list[str]) -> None:
     by_code = {c: r for c, r in out.iterrows()}
     cats = sorted(config.ALL_CRIME_TYPES)
-    feats, details = [], {}
+    feats, details, filt = [], {}, []
     for f in boundaries["features"]:
         code = f["properties"][config.BOUNDARY_FIELD_CODE]
         r = by_code.get(code)
@@ -195,8 +231,12 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
         pop = None if pd.isna(r["pop"]) else int(r["pop"])
         price = None if pd.isna(r["price"]) else int(r["price"])
         price_pctl = None if pd.isna(r["price_pctl"]) else float(r["price_pctl"])
+        yld = None if pd.isna(r["yield"]) else float(r["yield"])
+        yld_pctl = None if pd.isna(r["yield_pctl"]) else float(r["yield_pctl"])
+        p_res = None if pd.isna(r["p_res"]) else float(r["p_res"])
         props = {"lsoa21cd": code, "lsoa21nm": r["lsoa21nm"], "pop": pop,
-                 "low_pop_flag": bool(r["low_pop_flag"]), "price": price, "price_pctl": price_pctl}
+                 "low_pop_flag": bool(r["low_pop_flag"]), "price": price, "price_pctl": price_pctl,
+                 "yield": yld, "yield_pctl": yld_pctl}
         for c in BUNDLE_CODE.values():   # per-bundle scalars: total, rate, percentile, high-rate
             props[f"t_{c}"] = int(r[f"t_{c}"])
             props[f"r_{c}"] = None if pd.isna(r[f"r_{c}"]) else float(r[f"r_{c}"])
@@ -206,7 +246,10 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
         feats.append(f)
         # compact details (fetched lazily on click): arrays in the shared category/month order
         details[code] = {"c": [int(r["by_category"][c]) for c in cats],
-                         "m": list(r["monthly_counts"]), "price": price, "price_pctl": price_pctl}
+                         "m": list(r["monthly_counts"]), "price": price, "price_pctl": price_pctl,
+                         "yield": yld, "yield_pctl": yld_pctl}
+        # filter index row: [code, name, residential crime percentile, price, yield]
+        filt.append([code, r["lsoa21nm"], p_res, price, yld])
 
     config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
     config.NATIONAL_SLIM_GEOJSON.write_text(
@@ -216,8 +259,12 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
         "categories": cats, "months": months, "default_bundle": config.DEFAULT_BUNDLE,
         "bundles": config.CATEGORY_BUNDLES, "window_months": n_months,
         "low_pop_threshold": config.LOW_POP_THRESHOLD, "price_label": config.PRICE_LABEL,
-        "lsoa": details,
+        "rent_label": config.RENT_LABEL, "lsoa": details,
     }, allow_nan=False))
+    config.NATIONAL_FILTER.write_text(json.dumps(
+        {"fields": ["code", "name", "crime_pctl_res", "price", "yield"],
+         "count": len(filt), "rows": filt}, allow_nan=False))
+    _log(f"  wrote {config.NATIONAL_FILTER.name} ({config.NATIONAL_FILTER.stat().st_size/1e6:.1f} MB)")
     _log(f"Wrote {len(feats):,} features → {config.NATIONAL_SLIM_GEOJSON.name} "
          f"({config.NATIONAL_SLIM_GEOJSON.stat().st_size/1e6:.0f} MB) and "
          f"{config.NATIONAL_DETAILS.name} ({config.NATIONAL_DETAILS.stat().st_size/1e6:.1f} MB)")

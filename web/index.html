@@ -92,6 +92,23 @@
     .price-box .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
     .price-box .pv{font-family:var(--mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
     .price-box .muted{font-size:10.5px}
+    .price-box .yield-line{font-size:12px;color:var(--soft);margin-top:4px}
+    .price-box .yield-line b{font-family:var(--mono);color:var(--ink)}
+    .find-card .frow{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--soft);margin:10px 0 3px}
+    .find-card .frow b{font-family:var(--mono);color:var(--ink)}
+    .find-card input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+    .find-count{font-size:11.5px;color:var(--soft);margin:11px 0 0}
+    .find-card .results{margin-top:8px;display:flex;flex-direction:column;max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+    .find-card .results:empty{display:none}
+    .find-card .res{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}
+    .find-card .res:last-child{border-bottom:none} .find-card .res:hover{background:var(--panel-2)}
+    .find-card .res .nm{font-size:12px;font-weight:560} .find-card .res .meta{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+    .find-card .res .yld{font-family:var(--mono);font-weight:660;font-size:13px;color:var(--accent-ink)}
+    .affil{margin:16px 0 0;padding-top:13px;border-top:1px solid var(--line)}
+    .affil .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+    .affil a{font-size:11.5px;font-weight:560;color:var(--accent-ink);background:var(--accent-soft);border:1px solid #dfe2fb;border-radius:8px;padding:6px 10px;text-decoration:none}
+    .affil a:hover{background:#e6e9fd}
+    .affil .disc{font-size:10px;color:var(--faint);margin-top:8px;line-height:1.45}
     .legend .ramp{height:10px;border-radius:999px;margin:4px 0 6px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5))}
     .legend .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)}
     .legend .chips{display:flex;gap:14px;margin-top:12px}
@@ -145,6 +162,18 @@
           <div id="bundle-toggle" class="segmented" role="tablist"></div>
           <p id="bundle-desc" class="hint"></p>
         </section>
+
+        <section class="card find-card" id="find">
+          <p class="eyebrow">Find areas — buyers &amp; investors</p>
+          <div class="frow"><span>Crime — at most this percentile</span><b id="f-crime-v">50th</b></div>
+          <input type="range" id="f-crime" min="5" max="100" value="50" step="5" />
+          <div class="frow"><span>Gross yield — at least</span><b id="f-yield-v">any</b></div>
+          <input type="range" id="f-yield" min="0" max="12" value="0" step="0.5" />
+          <div class="frow"><span>Price — at most</span><b id="f-price-v">any</b></div>
+          <input type="range" id="f-price" min="0" max="1000000" value="0" step="25000" />
+          <p class="find-count" id="f-count">Set criteria to shortlist areas, ranked by yield.</p>
+          <div class="results" id="f-results"></div>
+        </section>
         <section id="panel" class="card empty">
           <div class="empty-state"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0z"/><path d="M17.6 17.6 22 22"/><path d="M3 11a8 8 0 1 0 16 0 8 8 0 0 0-16 0z"/></svg></span>
           <p>Click any neighbourhood, or search a postcode, to see its numbers.</p></div>
@@ -172,6 +201,10 @@
   ];
   const byCodeBundle = Object.fromEntries(BUNDLES.map(b => [b.code, b]));
   let active = 'res', selected = null, details = null, detailsPromise = null, map;
+  let filterRows = null, filterPromise = null;
+  // Disclosed referral links — money flows AROUND the data, never into it (no pay-to-rank).
+  // Put your own affiliate URLs here; empty = button hidden.
+  const AFFILIATE = { mortgage: '', conveyancer: '', survey: '' };
   const $ = s => document.querySelector(s);
   const fmt = n => Number(n).toLocaleString('en-GB');
 
@@ -256,9 +289,15 @@
       <p class="eyebrow" style="margin:16px 0 9px">Breakdown · ${b.label.toLowerCase()}</p>
       <div id="bars" class="bars"><p class="muted">loading…</p></div>
       <p class="eyebrow" style="margin:16px 0 0">Monthly · residential-risk bundle</p>
-      <div id="spark" class="spark-wrap"><p class="muted">loading…</p></div>`;
+      <div id="spark" class="spark-wrap"><p class="muted">loading…</p></div>
+      <div class="affil"><div class="eyebrow" style="margin:0">Moving to this area?</div><div class="row" id="affil-row"></div><div class="disc">Referral links — we may earn a fee if you use one. It never changes the data, the colours, or the rankings.</div></div>`;
     const cl = $('#copy-link');
     if (cl) cl.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(location.href); cl.textContent = 'Copied ✓'; setTimeout(() => { cl.textContent = 'Copy link'; }, 1500); };
+    const ar = $('#affil-row');
+    if (ar) { const L = { mortgage: 'Mortgage quotes', conveyancer: 'Conveyancers', survey: 'Surveyors' };
+      ar.innerHTML = Object.keys(L).map(k => AFFILIATE[k]
+        ? `<a href="${AFFILIATE[k]}" target="_blank" rel="noopener nofollow sponsored">${L[k]}</a>`
+        : `<a href="#" onclick="return false" title="Set AFFILIATE.${k} in the source to enable">${L[k]}</a>`).join(''); }
     ensureDetails().then(d => {
       const rec = d.lsoa[p.lsoa21cd]; if (!rec) return;
       const cats = d.categories, want = new Set(d.bundles[b.key]);
@@ -269,9 +308,13 @@
       const ti = trendInfo(rec.m), te = $('#trend');
       if (te) te.innerHTML = ti ? `<span class="dir ${ti.cls}">${ti.arrow} ${ti.label}</span> <span class="muted">— ${ti.detail} · residential-risk</span>` : '';
       const pb = $('#price');
-      if (pb) pb.innerHTML = rec.price != null
-        ? `<span class="k">Median house price</span><b class="pv">£${fmt(rec.price)}</b><span class="muted">${d.price_label || ''}${rec.price_pctl != null ? ` · pricier than ${Math.round(rec.price_pctl*100)}% of areas` : ''}</span>`
-        : `<span class="muted">Median house price — not published for this area (few sales, or the LSOA changed since 2011).</span>`;
+      if (pb) {
+        let h = rec.price != null
+          ? `<span class="k">Median house price</span><b class="pv">£${fmt(rec.price)}</b><span class="muted">${d.price_label || ''}${rec.price_pctl != null ? ` · pricier than ${Math.round(rec.price_pctl*100)}% of areas` : ''}</span>`
+          : `<span class="muted">Median house price — not published for this area (few sales, or the LSOA changed since 2011).</span>`;
+        if (rec.yield != null) h += `<div class="yield-line">Est. gross yield <b>${rec.yield.toFixed(1)}%</b> · <span class="muted">rent at local-authority level — estimate</span></div>`;
+        pb.innerHTML = h;
+      }
     });
   }
 
@@ -317,6 +360,42 @@
        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   }
 
+  function ensureFilter() {
+    if (filterRows) return Promise.resolve(filterRows);
+    if (!filterPromise) filterPromise = fetch('data/national-filter.json').then(r => r.json()).then(d => (filterRows = d.rows));
+    return filterPromise;
+  }
+  const fmtPrice = p => p >= 1e6 ? '£' + (p/1e6).toFixed(1) + 'm' : '£' + Math.round(p/1000) + 'k';
+  // The criteria filter — the hinge: "show me areas that are X", ranked for investors by yield.
+  // rows = [code, name, crimePctlResidential, price, grossYieldPct].
+  function applyFilter() {
+    const maxCrime = +$('#f-crime').value / 100, minYield = +$('#f-yield').value, maxPrice = +$('#f-price').value;
+    $('#f-crime-v').textContent = $('#f-crime').value + 'th';
+    $('#f-yield-v').textContent = minYield > 0 ? minYield + '%' : 'any';
+    $('#f-price-v').textContent = maxPrice > 0 ? fmtPrice(maxPrice) : 'any';
+    const off = maxCrime >= 1 && minYield <= 0 && maxPrice <= 0;
+    ensureFilter().then(rows => {
+      const m = off ? [] : rows.filter(r => r[2] != null && r[2] <= maxCrime
+        && (minYield <= 0 || (r[4] != null && r[4] >= minYield))
+        && (maxPrice <= 0 || (r[3] != null && r[3] <= maxPrice)));
+      m.sort((a, b) => (b[4] || 0) - (a[4] || 0));  // rank by yield, investor-first
+      $('#f-count').textContent = off ? 'Set criteria to shortlist areas, ranked by yield.'
+        : `${m.length.toLocaleString('en-GB')} areas match · top ${Math.min(50, m.length)} by yield`;
+      $('#f-results').innerHTML = m.slice(0, 50).map(r =>
+        `<div class="res" data-code="${r[0]}"><div><div class="nm">${r[1]}</div><div class="meta">crime ${Math.round(r[2]*100)}p · ${r[3] != null ? fmtPrice(r[3]) : '£—'}</div></div><div class="yld">${r[4] != null ? r[4].toFixed(1)+'%' : '—'}</div></div>`).join('');
+      $('#f-results').querySelectorAll('.res').forEach(el => el.addEventListener('click', () => goToCode(el.dataset.code)));
+      if (map && map.getLayer && map.getLayer('fill')) {
+        if (off) { map.setFilter('fill', null); }
+        else {
+          const f = ['all', ['<=', ['get', 'p_res'], maxCrime]];
+          if (minYield > 0) f.push(['all', ['has', 'yield'], ['>=', ['get', 'yield'], minYield]]);
+          if (maxPrice > 0) f.push(['all', ['has', 'price'], ['<=', ['get', 'price'], maxPrice]]);
+          map.setFilter('fill', f);
+        }
+      }
+    });
+  }
+
   async function search(pc) {
     const msg = $('#search-msg'); msg.className='msg'; msg.textContent='Looking up…';
     try {
@@ -359,8 +438,10 @@
       <h3>What the data is</h3><p>Street-level records from <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a> (all ~43 forces) — <b>reported</b> crimes, anonymised, snapped to a nearby point, monthly with a ~1–2 month lag, over a rolling 12 months.</p>
       <h3>The rate &amp; colour</h3><p>Reported crimes ÷ resident population × 1,000 — per-capita, never raw counts. Areas are coloured by their <b>percentile rank within England &amp; Wales</b>. Highest-rate areas (often town/city centres, where crime against non-residents lifts a per-resident rate) and very-low-population LSOAs are <b>greyed, not painted red</b> — so a footfall-inflated rate doesn't read as the most dangerous place to live. Their real figures and a plain-language note stay in each area's panel, which also shows whether residential crime is rising or falling over the window.</p>
       <h3>Crime-type bundles</h3><p>What "counts" is a choice: <b>Residential</b> (default), <b>Footfall</b>, or <b>All crime</b>.</p>
+      <h3>Price, rent &amp; yield</h3><p><b>Median sold price</b> per area is from ONS (HPSSA), year to March 2023 — kept at LSOA level. <b>Rent</b> is only published per local authority (ONS PIPR, mean private rent), so <b>gross yield (rent × 12 ÷ price) is an estimate</b> — it borrows the whole local authority's rent and mixes 2026 rent with 2023 price. Treat yield as a relative guide, not a guaranteed return. These are <b>separate layers</b>: we never blend crime, price and yield into a single "score" — you set your own thresholds in <i>Find areas</i>.</p>
+      <h3>Find areas</h3><p>The filter shortlists areas matching your criteria (crime percentile, minimum yield, maximum price), ranked by yield — for buyers and investors who ask "find me areas that are X," not just "what's this area like?"</p>
       <h3>How it's served</h3><p>~35,000 LSOAs are delivered as vector tiles (PMTiles, generated with tippecanoe) and rendered with MapLibre GL — the browser can't load that many polygons as raw GeoJSON.</p>
-      <h3>Sources &amp; licence</h3><p>Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a>; population (Census 2021 TS001) &amp; 2021 LSOA boundaries © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a>; postcodes via <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — all under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3</a>. Basemap © CARTO, © OpenStreetMap.</p>`;
+      <h3>Sources, licence &amp; referral links</h3><p>Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a>; population (Census 2021 TS001), 2021 LSOA boundaries, median price (HPSSA) &amp; rent (PIPR) © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a>; postcodes via <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — all under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3</a>. Basemap © CARTO, © OpenStreetMap. Any "Moving to this area?" links are <b>referral links</b> we may earn a fee from — they never change the data, the colours, or the rankings.</p>`;
   }
 
   function init() {
@@ -391,6 +472,7 @@
     buildToggle(); buildLegend(); buildMethod();
     $('#search').addEventListener('submit', e => { e.preventDefault(); const v=$('#postcode').value; if (v.trim()) search(v); });
     $('#near-me').addEventListener('click', nearMe);
+    ['f-crime', 'f-yield', 'f-price'].forEach(id => $('#' + id).addEventListener('input', applyFilter));
     $('#open-method').addEventListener('click', () => $('#method').showModal());
     window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h) && h !== selected) goToCode(h); });
   }

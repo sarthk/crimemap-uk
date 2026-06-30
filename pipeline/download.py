@@ -292,6 +292,20 @@ def download_price() -> None:
     _log(f"  wrote {config.PRICE_XLS} ({config.PRICE_XLS.stat().st_size >> 20} MB)")
 
 
+def download_rent() -> None:
+    config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+    _log(f"Rent: GET {config.PIPR_XLSX_URL}")
+    r = requests.get(config.PIPR_XLSX_URL, headers=UA, timeout=300)
+    r.raise_for_status()
+    config.RENT_XLSX.write_bytes(r.content)
+    _log(f"  wrote {config.RENT_XLSX} ({config.RENT_XLSX.stat().st_size >> 20} MB)")
+    _log(f"Rent join: GET LSOA→LAD lookup")
+    r2 = requests.get(config.LSOA_LAD_URL, headers=UA, timeout=120)
+    r2.raise_for_status()
+    config.LSOA_LAD_CSV.write_bytes(r2.content)
+    _log(f"  wrote {config.LSOA_LAD_CSV} ({config.LSOA_LAD_CSV.stat().st_size >> 10} KB)")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Download CrimeMap UK inputs.")
     ap.add_argument("--archive", action="store_true",
@@ -304,14 +318,17 @@ def main() -> int:
                     help="keep the staging zip instead of deleting it after extraction")
     ap.add_argument("--population", action="store_true", help="download TS001 population")
     ap.add_argument("--price", action="store_true", help="download ONS HPSSA median price (LSOA)")
-    ap.add_argument("--all", action="store_true", help="crime + population + price")
+    ap.add_argument("--rent", action="store_true", help="download ONS PIPR rent + LSOA→LAD lookup")
+    ap.add_argument("--all", action="store_true", help="crime + population + price + rent")
     args = ap.parse_args()
 
-    if (args.population or args.price) and not args.all:  # data-only downloads
+    if (args.population or args.price or args.rent) and not args.all:  # data-only downloads
         if args.population:
             download_population()
         if args.price:
             download_price()
+        if args.rent:
+            download_rent()
         return 0
 
     force = None if args.national else config.FORCE_ID
@@ -323,6 +340,7 @@ def main() -> int:
     if args.all:
         download_population()
         download_price()
+        download_rent()
     return 0
 
 

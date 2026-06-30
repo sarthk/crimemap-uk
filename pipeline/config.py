@@ -42,6 +42,31 @@ PRICE_CODE_COL = "LSOA code"
 PRICE_VALUE_COL = "Year ending Mar 2023"
 PRICE_LABEL = "ONS · median sold price · year to Mar 2023"
 
+# --- Filter index (compact all-LSOA table powering the "Find areas" criteria filter) ---
+NATIONAL_FILTER = WEB_DATA_DIR / "national-filter.json"
+
+# --- Rent / yield -------------------------------------------------------------
+# Gross yield (est.) = annual rent / median price. Rent is LA-level only, so yield
+# is an ESTIMATE (labelled). Source: ONS PIPR (Price Index of Private Rents),
+# monthly price statistics — MEAN private rent by LAD, current (E+W, no suppression).
+# Mean (not median) rent + 2026 rent over 2023 price → labelled an estimate.
+PIPR_XLSX_URL = ("https://www.ons.gov.uk/file?uri=/economy/inflationandpriceindices/datasets/"
+    "priceindexofprivaterentsukmonthlypricestatistics/17june2026/"
+    "priceindexofprivaterentsukmonthlypricestatistics13.xlsx")
+RENT_XLSX = INTERIM_DIR / "pipr-rent-by-lad.xlsx"
+RENT_SHEET = "Table 1"
+RENT_HEADER_ROW = 2          # headers on spreadsheet row 3
+RENT_TIME_COL = "Time period"
+RENT_CODE_COL = "Area code"  # LAD code (E06/E07/E08/E09/W06)
+RENT_VALUE_COL = "Rental price"   # overall mean £/month (ignore per-bedroom blocks)
+RENT_LABEL = "Gross yield (est.) · ONS mean rent (LA) ÷ ONS median price"
+# LSOA(2021) → LAD(2022) lookup — rent must join by code, not name (recon-confirmed).
+LSOA_LAD_URL = ("https://opendata.arcgis.com/api/v3/datasets/"
+    "cbfe64cc03d74af982c1afec639bafd1_0/downloads/data?format=csv&spatialRefId=4326")
+LSOA_LAD_CSV = INTERIM_DIR / "lsoa21-to-lad22.csv"
+LSOA_LAD_CODE = "LSOA21CD"
+LSOA_LAD_LAD = "LAD22CD"
+
 # --- Region (Phase 1) ---------------------------------------------------------
 # police.uk force identifier as it appears in bulk-CSV filenames:
 #   <YYYY-MM>/<YYYY-MM>-<FORCE_ID>-street.csv

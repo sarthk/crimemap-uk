@@ -8,6 +8,7 @@ pandas>=2.2          # also pulls numpy (used for percentile/outlier maths)
 requests>=2.31
 remotezip>=0.12      # range-based selective extraction from the police.uk archive zip
 xlrd>=2.0            # read the ONS HPSSA median-price .xls (old BIFF format)
+openpyxl>=3.1        # read the ONS PIPR rent .xlsx
 
 # --- Phase 2 only (national PMTiles tiling) ---
 # geopandas>=1.0
