@@ -41,6 +41,8 @@
     .logo .mark{width:26px;height:26px;border-radius:8px;background:var(--ink);display:grid;place-items:center;box-shadow:var(--shadow-sm)}
     .logo h1{font-size:15.5px;font-weight:680;letter-spacing:-.2px;margin:0}
     .chip{font-size:11px;font-weight:600;color:var(--soft);background:var(--panel-2);border:1px solid var(--line);padding:3px 9px;border-radius:999px}
+    .chip.visits{display:inline-flex;align-items:center;gap:5px;color:var(--accent-ink);background:var(--accent-soft);border-color:#dfe2fb;font-variant-numeric:tabular-nums}
+    .chip.visits svg{color:var(--accent)}
     #top .spacer{flex:1}
     .ghost-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:560;color:var(--soft);
       background:transparent;border:1px solid var(--line);border-radius:9px;padding:7px 12px;cursor:pointer;transition:.14s;text-decoration:none}
@@ -154,6 +156,7 @@
       <div class="logo"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></span><h1>CrimeMap&nbsp;UK</h1></div>
       <span class="chip">England &amp; Wales</span>
       <span class="spacer"></span>
+      <span class="chip visits" id="visits" style="display:none"></span>
       <button type="button" id="open-method" class="ghost-btn">Methodology</button>
     </header>
     <div id="filterbar">
@@ -219,6 +222,9 @@
   // Disclosed referral links — money flows AROUND the data, never into it (no pay-to-rank).
   // Put your own affiliate URLs here; empty = button hidden.
   const AFFILIATE = { mortgage: '', conveyancer: '', survey: '' };
+  // Cookie-free visit counter (deduped per browser per day, so refreshes don't inflate it).
+  // Set `goatcounter` to a free goatcounter.com site code for TRUE unique visitors + a dashboard.
+  const VISITS = { goatcounter: '', ns: 'vicinia-crimemap', key: 'site' };
   const $ = s => document.querySelector(s);
   const fmt = n => Number(n).toLocaleString('en-GB');
 
@@ -462,7 +468,28 @@
       <h3>Price, rent &amp; yield</h3><p><b>Median sold price</b> per area is from ONS (HPSSA), year to March 2023 — kept at LSOA level. <b>Rent</b> is only published per local authority (ONS PIPR, mean private rent), so <b>gross yield (rent × 12 ÷ price) is an estimate</b> — it borrows the whole local authority's rent and mixes 2026 rent with 2023 price. Treat yield as a relative guide, not a guaranteed return. These are <b>separate layers</b>: we never blend crime, price and yield into a single "score" — you set your own thresholds in <i>Find areas</i>.</p>
       <h3>Find areas</h3><p>The filter shortlists areas matching your criteria (crime percentile, minimum yield, maximum price), ranked by yield — for buyers and investors who ask "find me areas that are X," not just "what's this area like?"</p>
       <h3>How it's served</h3><p>~35,000 LSOAs are delivered as vector tiles (PMTiles, generated with tippecanoe) and rendered with MapLibre GL — the browser can't load that many polygons as raw GeoJSON.</p>
-      <h3>Sources, licence &amp; referral links</h3><p>Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a>; population (Census 2021 TS001), 2021 LSOA boundaries, median price (HPSSA) &amp; rent (PIPR) © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a>; postcodes via <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — all under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3</a>. Basemap © CARTO, © OpenStreetMap. Any "Moving to this area?" links are <b>referral links</b> we may earn a fee from — they never change the data, the colours, or the rankings.</p>`;
+      <h3>Sources, licence &amp; referral links</h3><p>Crime © <a href="https://data.police.uk" target="_blank" rel="noopener">police.uk</a>; population (Census 2021 TS001), 2021 LSOA boundaries, median price (HPSSA) &amp; rent (PIPR) © <a href="https://www.ons.gov.uk" target="_blank" rel="noopener">ONS</a>; postcodes via <a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — all under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3</a>. Basemap © CARTO, © OpenStreetMap. Any "Moving to this area?" links are <b>referral links</b> we may earn a fee from — they never change the data, the colours, or the rankings. The visitor count is a lightweight, cookie-free tally (counted once per browser per day), not precise analytics.</p>`;
+  }
+
+  async function initVisits() {
+    const el = $('#visits'); if (!el) return;
+    const eye = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const show = (n, label) => { const lbl = n === 1 ? label.replace(/s$/, '') : label;
+      el.innerHTML = `${eye}${(n || 0).toLocaleString('en-GB')} ${lbl}`; el.style.display = ''; };
+    try {
+      if (VISITS.goatcounter) {  // real unique visitors + dashboard (privacy-friendly, no cookies)
+        const s = document.createElement('script'); s.async = true; s.src = '//gc.zgo.at/count.js';
+        s.setAttribute('data-goatcounter', `https://${VISITS.goatcounter}.goatcounter.com/count`); document.body.appendChild(s);
+        const j = await (await fetch(`https://${VISITS.goatcounter}.goatcounter.com/counter/TOTAL.json`)).json();
+        show(+String(j.count_unique ?? j.count).replace(/[^0-9]/g, ''), 'visitors');
+      } else {  // no-signup fallback: one count per browser per day
+        const today = new Date().toISOString().slice(0, 10);
+        const first = localStorage.getItem('viz-day') !== today;
+        if (first) localStorage.setItem('viz-day', today);
+        const j = await (await fetch(`https://abacus.jasoncameron.dev/${first ? 'hit' : 'get'}/${VISITS.ns}/${VISITS.key}`)).json();
+        show(j.value, 'visits');
+      }
+    } catch (e) { /* counter offline — leave the chip hidden */ }
   }
 
   function init() {
@@ -501,6 +528,7 @@
     $('#f-clear').addEventListener('click', () => { $('#f-crime').value = '1'; $('#f-price').value = '0'; $('#f-yield').value = '0'; $('#f-sort').value = 'yield'; applyFilter(); });
     $('#open-method').addEventListener('click', () => $('#method').showModal());
     window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h) && h !== selected) goToCode(h); });
+    initVisits();
   }
   init();
   </script>
