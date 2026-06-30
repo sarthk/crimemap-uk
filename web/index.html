@@ -46,6 +46,11 @@
     #postcode:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(67,56,202,.12)}
     #search button{padding:0 16px;height:42px;border:none;border-radius:11px;cursor:pointer;background:var(--accent);color:#fff;font-size:13.5px;font-weight:620}
     #search button:hover{background:var(--accent-ink)}
+    .near-btn{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--soft);font-size:12px;font-weight:560;cursor:pointer;transition:.14s}
+    .near-btn:hover{color:var(--accent-ink);border-color:#cdd5e2;background:#fff}
+    .copy-link{flex:0 0 auto;border:1px solid var(--line);background:var(--panel-2);color:var(--soft);font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:7px;cursor:pointer}
+    .copy-link:hover{color:var(--accent-ink)}
+    .p-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px} .p-head-l{min-width:0}
     .msg{min-height:15px;margin:9px 2px 0;font-size:12px;color:var(--accent-ink)} .msg.warn{color:#c0492f}
     .segmented{display:flex;background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:3px;gap:3px}
     .segmented button{flex:1;padding:8px 4px;border:none;background:transparent;cursor:pointer;font-size:12px;font-weight:560;color:var(--soft);border-radius:8px;transition:.14s}
@@ -128,6 +133,7 @@
               <input id="postcode" type="text" placeholder="Postcode, e.g. LS1 4DY" aria-label="Postcode" /></span>
             <button type="submit">Go</button>
           </form>
+          <button type="button" id="near-me" class="near-btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Use my location</button>
           <p id="search-msg" class="msg" role="status"></p>
         </section>
         <section class="card">
@@ -235,7 +241,7 @@
               : high ? {cls:'high', t:'Among the highest rates in England & Wales. Town/city-centre areas often record crime against non-residents (visitors, workers, shoppers) as well as residents, so a per-resident rate can read high here — compare with care.'} : null;
     $('#panel').classList.remove('empty');
     $('#panel').innerHTML = `
-      <div class="p-head"><h2>${p.lsoa21nm}</h2><div class="code">${p.lsoa21cd} · ${b.label} · reported crime</div></div>
+      <div class="p-head"><div class="p-head-l"><h2>${p.lsoa21nm}</h2><div class="code">${p.lsoa21cd} · ${b.label} · reported crime</div></div><button class="copy-link" id="copy-link">Copy link</button></div>
       <div class="headline"><span class="rate">${rate==null?'—':Number(rate).toFixed(1)}</span><span class="unit">per 1,000<br>residents</span></div>
       <div class="stat-strip"><div class="stat"><div class="k">Reported crimes</div><div class="v">${fmt(total)}</div></div><div class="stat"><div class="k">Residents</div><div class="v">${p.pop==null?'—':fmt(p.pop)}</div></div></div>
       <div class="standing"><div class="lab"><span>Standing in England &amp; Wales</span><span>${standing}</span></div><div class="pbar">${pct==null?'':`<span class="mk" style="left:${pct*100}%"></span>`}</div></div>
@@ -246,6 +252,8 @@
       <div id="bars" class="bars"><p class="muted">loading…</p></div>
       <p class="eyebrow" style="margin:16px 0 0">Monthly · residential-risk bundle</p>
       <div id="spark" class="spark-wrap"><p class="muted">loading…</p></div>`;
+    const cl = $('#copy-link');
+    if (cl) cl.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(location.href); cl.textContent = 'Copied ✓'; setTimeout(() => { cl.textContent = 'Copy link'; }, 1500); };
     ensureDetails().then(d => {
       const rec = d.lsoa[p.lsoa21cd]; if (!rec) return;
       const cats = d.categories, want = new Set(d.bundles[b.key]);
@@ -261,7 +269,43 @@
   function select(code, props) {
     selected = code;
     map.setFilter('sel', ['==', ['get','lsoa21cd'], code || '']);
+    if (code) history.replaceState(null, '', '#' + code);  // shareable per-area URL
     if (props) showPanel(props);
+  }
+
+  function featureCenter(g) {
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    const walk = a => { if (typeof a[0] === 'number') { if (a[0]<minx)minx=a[0]; if (a[0]>maxx)maxx=a[0]; if (a[1]<miny)miny=a[1]; if (a[1]>maxy)maxy=a[1]; } else for (const x of a) walk(x); };
+    walk(g.coordinates); return [(minx+maxx)/2, (miny+maxy)/2];
+  }
+  // Deep-link / shareable URL: fly to an LSOA by code and open its panel.
+  function goToCode(code) {
+    const find = () => map.querySourceFeatures(SRC, { sourceLayer: LYR, filter: ['==',['get','lsoa21cd'], code] });
+    const fs = find(); if (!fs.length) return false;
+    map.flyTo({ center: featureCenter(fs[0].geometry), zoom: 12 });
+    map.once('idle', () => { const f2 = find(); if (f2.length) select(code, f2[0].properties); });
+    return true;
+  }
+  // "Near me": browser geolocation → reverse-geocode to LSOA (postcodes.io) → fly + select.
+  function nearMe() {
+    const msg = $('#search-msg');
+    if (!navigator.geolocation) { msg.className='msg warn'; msg.textContent='Location not available in this browser.'; return; }
+    msg.className='msg'; msg.textContent='Finding your location…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const lon = pos.coords.longitude, lat = pos.coords.latitude;
+      try {
+        const res = (await (await fetch(`https://api.postcodes.io/postcodes?lon=${lon}&lat=${lat}`)).json()).result;
+        const first = res && res[0];
+        const code = first && first.codes && (first.codes.lsoa21 || first.codes.lsoa);
+        map.flyTo({ center: [lon, lat], zoom: 13 });
+        map.once('idle', () => {
+          const fs = code ? map.querySourceFeatures(SRC, { sourceLayer: LYR, filter: ['==',['get','lsoa21cd'], code] }) : [];
+          if (fs.length) { select(code, fs[0].properties); msg.textContent = `Your area → ${first.lsoa21 || first.lsoa || ''}`; }
+          else { msg.className='msg warn'; msg.textContent = 'Your location is outside England & Wales.'; }
+        });
+      } catch (e) { msg.className='msg warn'; msg.textContent = 'Could not look up your area.'; }
+    }, err => { msg.className='msg warn'; msg.textContent = err.code === 1 ? 'Location permission denied.' : 'Could not get your location.'; },
+       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   }
 
   async function search(pc) {
@@ -330,14 +374,16 @@
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'top-left');
     map.addControl(new maplibregl.AttributionControl({ compact:true }));
-    map.on('load', () => $('#overlay').classList.add('hidden'));
+    map.on('load', () => { $('#overlay').classList.add('hidden'); const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h)) goToCode(h); });
     map.on('error', e => { if (e && e.error) console.warn('map error', e.error.message || e.error); });
     map.on('click', 'fill', e => { const p = e.features[0].properties; select(p.lsoa21cd, p); });
     map.on('mouseenter', 'fill', () => map.getCanvas().style.cursor='pointer');
     map.on('mouseleave', 'fill', () => map.getCanvas().style.cursor='');
     buildToggle(); buildLegend(); buildMethod();
     $('#search').addEventListener('submit', e => { e.preventDefault(); const v=$('#postcode').value; if (v.trim()) search(v); });
+    $('#near-me').addEventListener('click', nearMe);
     $('#open-method').addEventListener('click', () => $('#method').showModal());
+    window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h) && h !== selected) goToCode(h); });
   }
   init();
   </script>
