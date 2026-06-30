@@ -282,8 +282,12 @@
   const fmt = (n) => Number(n).toLocaleString("en-GB");
 
   const colorFor = (pct) => { if (pct == null) return C_LOW; for (const b of BANDS) if (pct >= b.min) return b.color; return SCALE[0]; };
-  const styleFor = (p) => ({ fillColor: colorFor(p._pct), weight: p._high ? 1.4 : 0.4,
-    color: p._high ? "#7a0023" : "#aab4c2", dashArray: p._high ? "2 2" : null, fillOpacity: p._pct == null ? 0.5 : 0.82 });
+  // Flagged areas (low residential pop OR footfall-inflated top-1% rate) are greyed,
+  // not painted max-red — a city-centre per-capita rate is footfall, not residential risk.
+  const styleFor = (p) => { const flagged = p.low_pop_flag || p._high; return {
+    fillColor: flagged ? C_LOW : colorFor(p._pct), weight: p._high ? 1.2 : 0.4,
+    color: p._high ? "#5b6b85" : "#aab4c2", dashArray: p._high ? "2 2" : null,
+    fillOpacity: flagged ? 0.6 : 0.82 }; };
 
   function caveatFor(p) {
     if (p.low_pop_flag) return { cls: "low", text: "Low residential population — the per-resident rate may overstate risk." };
@@ -393,10 +397,9 @@
       <div class="ramp"></div>
       <div class="ticks"><span>Lower</span><span>Median</span><span>Top 10%</span><span>Top 1%</span></div>
       <div class="chips">
-        <span class="lchip"><span class="sw caution"></span>Very high — compare with care</span>
-        <span class="lchip"><span class="sw" style="background:${C_LOW}"></span>Low residential pop.</span>
+        <span class="lchip"><span class="sw" style="background:${C_LOW};border-style:dashed"></span>Flagged — greyed, not ranked</span>
       </div>
-      <p class="note">Colour shows an area's rank for the selected crime types, not an absolute level. The highest rates (often town &amp; city centres) are outlined.</p>`;
+      <p class="note">Colour = an area's rank for the selected crime types, not an absolute level. <b>Greyed</b> areas are flagged: town/city centres whose per-resident rate is inflated by footfall (visitors, not residents), or very-low-population LSOAs — greyed rather than painted red so the map isn't misleading. Their real figures are in the panel.</p>`;
   }
   function buildMethodology() {
     const b = META.bundles;

@@ -54,5 +54,7 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    print(f"Serving {ROOT} on http://127.0.0.1:{port}  (Range-capable)", flush=True)
-    http.server.HTTPServer(("127.0.0.1", port), RangeHandler).serve_forever()
+    print(f"Serving {ROOT} on http://127.0.0.1:{port}  (Range-capable, threaded)", flush=True)
+    # ThreadingHTTPServer: MapLibre/PMTiles fire many concurrent tile requests;
+    # a single-threaded server serialises them and can stall the map load.
+    http.server.ThreadingHTTPServer(("127.0.0.1", port), RangeHandler).serve_forever()
