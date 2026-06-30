@@ -382,32 +382,39 @@
   const fmtPrice = p => p >= 1e6 ? '£' + (p/1e6).toFixed(1) + 'm' : '£' + Math.round(p/1000) + 'k';
   // The criteria filter — the hinge: "show me areas that are X", ranked for investors by yield.
   // rows = [code, name, crimePctlResidential, price, grossYieldPct].
+  const MATCH_FILL = '#4338ca';                 // bold highlight — pops on the pale basemap
+  const NONE = ['==', ['get', 'lsoa21cd'], '__none__'];
+  const setMap = (fn) => { if (map && map.getLayer && map.getLayer('fill')) fn(); };
   function applyFilter() {
     const maxCrime = +$('#f-crime').value, minYield = +$('#f-yield').value, maxPrice = +$('#f-price').value, sortBy = $('#f-sort').value;
     const off = maxCrime >= 1 && minYield <= 0 && maxPrice <= 0;
     const hint = $('#f-hint');
+    if (off) {  // back to the crime choropleth
+      $('#f-count').textContent = ''; if (hint) hint.style.display = ''; $('#f-results').innerHTML = '';
+      setMap(() => { map.setFilter('fill', null); map.setPaintProperty('fill', 'fill-color', fillPaint(active));
+        map.setPaintProperty('fill', 'fill-opacity', 0.7);
+        map.setFilter('caution', ['==', ['get', 'h_' + active], true]); map.setFilter('matchline', NONE); });
+      return;
+    }
     ensureFilter().then(rows => {
-      const m = off ? [] : rows.filter(r => r[2] != null && r[2] <= maxCrime
+      const m = rows.filter(r => r[2] != null && r[2] <= maxCrime
         && (minYield <= 0 || (r[4] != null && r[4] >= minYield))
         && (maxPrice <= 0 || (r[3] != null && r[3] <= maxPrice)));
       const cmp = { yield: (a, b) => (b[4] ?? -1) - (a[4] ?? -1),     // high → low
                     price: (a, b) => (a[3] ?? 1e12) - (b[3] ?? 1e12), // low → high
                     crime: (a, b) => (a[2] ?? 2) - (b[2] ?? 2) }[sortBy];  // low → high
       m.sort(cmp);
-      $('#f-count').textContent = off ? '' : `${m.length.toLocaleString('en-GB')} match`;
-      if (hint) hint.style.display = off ? '' : 'none';
+      $('#f-count').textContent = `${m.length.toLocaleString('en-GB')} match`;
+      if (hint) hint.style.display = 'none';
       $('#f-results').innerHTML = m.slice(0, 80).map(r =>
         `<div class="res" data-code="${r[0]}"><div><div class="nm">${r[1]}</div><div class="meta">crime ${r[2] != null ? Math.round(r[2]*100)+'p' : '—'} · ${r[3] != null ? fmtPrice(r[3]) : '£—'}</div></div><div class="yld">${r[4] != null ? r[4].toFixed(1)+'%' : '—'}</div></div>`).join('');
       $('#f-results').querySelectorAll('.res').forEach(el => el.addEventListener('click', () => goToCode(el.dataset.code)));
-      if (map && map.getLayer && map.getLayer('fill')) {
-        if (off) { map.setFilter('fill', null); }
-        else {
-          const f = ['all', ['<=', ['get', 'p_res'], maxCrime]];
-          if (minYield > 0) f.push(['all', ['has', 'yield'], ['>=', ['get', 'yield'], minYield]]);
-          if (maxPrice > 0) f.push(['all', ['has', 'price'], ['<=', ['get', 'price'], maxPrice]]);
-          map.setFilter('fill', f);
-        }
-      }
+      const f = ['all', ['<=', ['get', 'p_res'], maxCrime]];
+      if (minYield > 0) f.push(['all', ['has', 'yield'], ['>=', ['get', 'yield'], minYield]]);
+      if (maxPrice > 0) f.push(['all', ['has', 'price'], ['<=', ['get', 'price'], maxPrice]]);
+      setMap(() => { map.setFilter('fill', f); map.setPaintProperty('fill', 'fill-color', MATCH_FILL);
+        map.setPaintProperty('fill', 'fill-opacity', 0.92);
+        map.setFilter('caution', NONE); map.setFilter('matchline', f); });
     });
   }
 
@@ -437,8 +444,7 @@
     active = code;
     $('#bundle-toggle').querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.c===code)));
     $('#bundle-desc').textContent = byCodeBundle[code].desc;
-    map.setPaintProperty('fill','fill-color', fillPaint(code));
-    map.setFilter('caution', ['==', ['get','h_'+code], true]);
+    applyFilter();  // re-applies fill colour / caution / match highlight for the new bundle + current filter
     if (selected) { const fs = map.querySourceFeatures(SRC,{sourceLayer:LYR,filter:['==',['get','lsoa21cd'],selected]}); if (fs.length) showPanel(fs[0].properties); }
   }
   function buildLegend() {
@@ -473,6 +479,7 @@
           { id:'bg', type:'background', paint:{'background-color':'#e9edf2'} },
           { id:'basemap', type:'raster', source:'basemap' },
           { id:'fill', type:'fill', source:SRC, 'source-layer':LYR, paint:{ 'fill-color':fillPaint('res'), 'fill-opacity':0.7 } },
+          { id:'matchline', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','lsoa21cd'],'__none__'], paint:{ 'line-color':'#312e81','line-width':1.4 } },
           { id:'caution', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','h_res'],true], paint:{ 'line-color':'#5b6b85','line-width':1.0,'line-dasharray':[2,2] } },
           { id:'sel', type:'line', source:SRC, 'source-layer':LYR, filter:['==',['get','lsoa21cd'],''], paint:{ 'line-color':'#0f1729','line-width':2.5 } },
         ] },
