@@ -22,7 +22,19 @@
     body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
     .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
     button{font-family:inherit}
-    #app{display:grid;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
+    #app{display:grid;grid-template-rows:auto auto 1fr;height:100vh;overflow:hidden}
+    #filterbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:9px 18px;background:var(--panel);border-bottom:1px solid var(--line);z-index:900}
+    #filterbar .fb-title{font-size:12px;font-weight:680;color:var(--ink)}
+    #filterbar label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--soft)}
+    #filterbar select{font-family:inherit;font-size:12px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer}
+    #filterbar select:focus{outline:none;border-color:var(--accent)}
+    #filterbar .fb-count{font-size:12px;font-weight:600;color:var(--accent-ink)}
+    #filterbar .fb-clear{margin-left:auto;font-size:11.5px;color:var(--soft);background:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+    #filterbar .fb-clear:hover{color:var(--ink);background:var(--panel-2)}
+    .hover-pop .maplibregl-popup-content{padding:5px 9px;display:flex;flex-direction:column;gap:1px}
+    .hover-pop b{font-size:12px} .hover-pop .hp-sub{font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+    .hover-pop .maplibregl-popup-tip{display:none}
+    .find-hint{font-size:12px;color:var(--faint);line-height:1.5;margin:0}
     header#top{display:flex;align-items:center;gap:12px;padding:0 18px;height:56px;background:rgba(255,255,255,.85);
       backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line);z-index:1000}
     .logo{display:flex;align-items:center;gap:9px}
@@ -142,9 +154,17 @@
       <div class="logo"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></span><h1>CrimeMap&nbsp;UK</h1></div>
       <span class="chip">England &amp; Wales</span>
       <span class="spacer"></span>
-      <a class="ghost-btn" href="west-yorkshire.html">West Yorkshire ↗</a>
       <button type="button" id="open-method" class="ghost-btn">Methodology</button>
     </header>
+    <div id="filterbar">
+      <span class="fb-title">Find areas</span>
+      <label>Crime <select id="f-crime"><option value="1">Any</option><option value="0.5">Low (≤ 50th)</option><option value="0.25">Lowest (≤ 25th)</option></select></label>
+      <label>Max price <select id="f-price"><option value="0">Any</option><option value="200000">£200k</option><option value="350000">£350k</option><option value="500000">£500k</option><option value="750000">£750k</option></select></label>
+      <label>Min yield <select id="f-yield"><option value="0">Any</option><option value="4">4%</option><option value="5">5%</option><option value="6">6%</option><option value="7">7%</option><option value="8">8%</option></select></label>
+      <label>Sort <select id="f-sort"><option value="yield">Highest yield</option><option value="price">Lowest price</option><option value="crime">Lowest crime</option></select></label>
+      <span class="fb-count" id="f-count"></span>
+      <button type="button" class="fb-clear" id="f-clear">Clear</button>
+    </div>
     <main id="body">
       <aside id="sidebar">
         <section class="card">
@@ -164,14 +184,8 @@
         </section>
 
         <section class="card find-card" id="find">
-          <p class="eyebrow">Find areas — buyers &amp; investors</p>
-          <div class="frow"><span>Crime — at most this percentile</span><b id="f-crime-v">50th</b></div>
-          <input type="range" id="f-crime" min="5" max="100" value="50" step="5" />
-          <div class="frow"><span>Gross yield — at least</span><b id="f-yield-v">any</b></div>
-          <input type="range" id="f-yield" min="0" max="12" value="0" step="0.5" />
-          <div class="frow"><span>Price — at most</span><b id="f-price-v">any</b></div>
-          <input type="range" id="f-price" min="0" max="1000000" value="0" step="25000" />
-          <p class="find-count" id="f-count">Set criteria to shortlist areas, ranked by yield.</p>
+          <p class="eyebrow">Matching areas</p>
+          <p class="find-hint" id="f-hint">Use the <b>Find areas</b> bar at the top to shortlist areas across England &amp; Wales by crime, price and yield — then click one.</p>
           <div class="results" id="f-results"></div>
         </section>
         <section id="panel" class="card empty">
@@ -369,20 +383,21 @@
   // The criteria filter — the hinge: "show me areas that are X", ranked for investors by yield.
   // rows = [code, name, crimePctlResidential, price, grossYieldPct].
   function applyFilter() {
-    const maxCrime = +$('#f-crime').value / 100, minYield = +$('#f-yield').value, maxPrice = +$('#f-price').value;
-    $('#f-crime-v').textContent = $('#f-crime').value + 'th';
-    $('#f-yield-v').textContent = minYield > 0 ? minYield + '%' : 'any';
-    $('#f-price-v').textContent = maxPrice > 0 ? fmtPrice(maxPrice) : 'any';
+    const maxCrime = +$('#f-crime').value, minYield = +$('#f-yield').value, maxPrice = +$('#f-price').value, sortBy = $('#f-sort').value;
     const off = maxCrime >= 1 && minYield <= 0 && maxPrice <= 0;
+    const hint = $('#f-hint');
     ensureFilter().then(rows => {
       const m = off ? [] : rows.filter(r => r[2] != null && r[2] <= maxCrime
         && (minYield <= 0 || (r[4] != null && r[4] >= minYield))
         && (maxPrice <= 0 || (r[3] != null && r[3] <= maxPrice)));
-      m.sort((a, b) => (b[4] || 0) - (a[4] || 0));  // rank by yield, investor-first
-      $('#f-count').textContent = off ? 'Set criteria to shortlist areas, ranked by yield.'
-        : `${m.length.toLocaleString('en-GB')} areas match · top ${Math.min(50, m.length)} by yield`;
-      $('#f-results').innerHTML = m.slice(0, 50).map(r =>
-        `<div class="res" data-code="${r[0]}"><div><div class="nm">${r[1]}</div><div class="meta">crime ${Math.round(r[2]*100)}p · ${r[3] != null ? fmtPrice(r[3]) : '£—'}</div></div><div class="yld">${r[4] != null ? r[4].toFixed(1)+'%' : '—'}</div></div>`).join('');
+      const cmp = { yield: (a, b) => (b[4] ?? -1) - (a[4] ?? -1),     // high → low
+                    price: (a, b) => (a[3] ?? 1e12) - (b[3] ?? 1e12), // low → high
+                    crime: (a, b) => (a[2] ?? 2) - (b[2] ?? 2) }[sortBy];  // low → high
+      m.sort(cmp);
+      $('#f-count').textContent = off ? '' : `${m.length.toLocaleString('en-GB')} match`;
+      if (hint) hint.style.display = off ? '' : 'none';
+      $('#f-results').innerHTML = m.slice(0, 80).map(r =>
+        `<div class="res" data-code="${r[0]}"><div><div class="nm">${r[1]}</div><div class="meta">crime ${r[2] != null ? Math.round(r[2]*100)+'p' : '—'} · ${r[3] != null ? fmtPrice(r[3]) : '£—'}</div></div><div class="yld">${r[4] != null ? r[4].toFixed(1)+'%' : '—'}</div></div>`).join('');
       $('#f-results').querySelectorAll('.res').forEach(el => el.addEventListener('click', () => goToCode(el.dataset.code)));
       if (map && map.getLayer && map.getLayer('fill')) {
         if (off) { map.setFilter('fill', null); }
@@ -467,12 +482,16 @@
     map.on('load', () => { $('#overlay').classList.add('hidden'); const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h)) goToCode(h); });
     map.on('error', e => { if (e && e.error) console.warn('map error', e.error.message || e.error); });
     map.on('click', 'fill', e => { const p = e.features[0].properties; select(p.lsoa21cd, p); });
-    map.on('mouseenter', 'fill', () => map.getCanvas().style.cursor='pointer');
-    map.on('mouseleave', 'fill', () => map.getCanvas().style.cursor='');
+    const hoverPop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8, className: 'hover-pop' });
+    map.on('mousemove', 'fill', e => { map.getCanvas().style.cursor = 'pointer';
+      const p = e.features[0].properties;
+      hoverPop.setLngLat(e.lngLat).setHTML(`<b>${p.lsoa21nm}</b><span class="hp-sub">${p.lsoa21cd}</span>`).addTo(map); });
+    map.on('mouseleave', 'fill', () => { map.getCanvas().style.cursor = ''; hoverPop.remove(); });
     buildToggle(); buildLegend(); buildMethod();
     $('#search').addEventListener('submit', e => { e.preventDefault(); const v=$('#postcode').value; if (v.trim()) search(v); });
     $('#near-me').addEventListener('click', nearMe);
-    ['f-crime', 'f-yield', 'f-price'].forEach(id => $('#' + id).addEventListener('input', applyFilter));
+    ['f-crime', 'f-price', 'f-yield', 'f-sort'].forEach(id => $('#' + id).addEventListener('change', applyFilter));
+    $('#f-clear').addEventListener('click', () => { $('#f-crime').value = '1'; $('#f-price').value = '0'; $('#f-yield').value = '0'; $('#f-sort').value = 'yield'; applyFilter(); });
     $('#open-method').addEventListener('click', () => $('#method').showModal());
     window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (/^[EW]01\d{6}$/.test(h) && h !== selected) goToCode(h); });
   }

@@ -6,8 +6,9 @@ normalised per resident** — so a renter, student, or buyer can judge how safe 
 always together) and lets the user draw their own conclusions. It is a calm
 reference tool, **not** a "crime is exploding" shock piece.
 
-> **Landing page — England & Wales** (`index.html`): MapLibre GL + PMTiles, ~35k LSOAs.
-> **West Yorkshire** (`west-yorkshire.html`): the original Leaflet + GeoJSON build.
+> **England & Wales** (`index.html`): one MapLibre GL + PMTiles map of ~35k LSOAs —
+> crime (per resident), median price, gross yield, hover tooltips, and a top
+> "Find areas" filter (crime / price / yield, sortable) for buyers & investors.
 > Live at https://sarthk.github.io/crimemap-uk/ · brief in [CLAUDE.md](CLAUDE.md).
 
 ## Layout
