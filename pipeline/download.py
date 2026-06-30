@@ -279,6 +279,19 @@ def download_population() -> None:
     _log(f"  wrote {TS001_OUT}")
 
 
+def download_price() -> None:
+    config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+    _log(f"Price: GET {config.HPSSA_PRICE_ZIP_URL}")
+    r = requests.get(config.HPSSA_PRICE_ZIP_URL, headers=UA, timeout=300)
+    r.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        member = next((n for n in zf.namelist() if n.lower().endswith(".xls")), None)
+        if member is None:
+            raise RuntimeError(f"no .xls in HPSSA zip ({zf.namelist()})")
+        config.PRICE_XLS.write_bytes(zf.read(member))
+    _log(f"  wrote {config.PRICE_XLS} ({config.PRICE_XLS.stat().st_size >> 20} MB)")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Download CrimeMap UK inputs.")
     ap.add_argument("--archive", action="store_true",
@@ -290,11 +303,15 @@ def main() -> int:
     ap.add_argument("--keep-archive", action="store_true",
                     help="keep the staging zip instead of deleting it after extraction")
     ap.add_argument("--population", action="store_true", help="download TS001 population")
-    ap.add_argument("--all", action="store_true", help="crime + population")
+    ap.add_argument("--price", action="store_true", help="download ONS HPSSA median price (LSOA)")
+    ap.add_argument("--all", action="store_true", help="crime + population + price")
     args = ap.parse_args()
 
-    if args.population and not args.all:
-        download_population()
+    if (args.population or args.price) and not args.all:  # data-only downloads
+        if args.population:
+            download_population()
+        if args.price:
+            download_price()
         return 0
 
     force = None if args.national else config.FORCE_ID
@@ -305,6 +322,7 @@ def main() -> int:
     download_crime(method=method, keep_archive=args.keep_archive, force=force)
     if args.all:
         download_population()
+        download_price()
     return 0
 
 

@@ -49,6 +49,17 @@ def find_tippecanoe() -> str:
     sys.exit("tippecanoe not found. Install it, or set CRIMEMAP_TIPPECANOE=/path/to/tippecanoe.")
 
 
+# --- Price (ONS HPSSA median price; 2011-LSOA keyed, joined by direct code match) ---
+def load_price() -> dict:
+    if not config.PRICE_XLS.exists():
+        _log("  (no price file — run `python pipeline/download.py --price`; skipping price)")
+        return {}
+    df = pd.read_excel(config.PRICE_XLS, sheet_name=config.PRICE_SHEET,
+                       header=config.PRICE_HEADER_ROW, engine="xlrd", na_values=[":"])
+    s = df[[config.PRICE_CODE_COL, config.PRICE_VALUE_COL]].dropna()
+    return {str(k): int(v) for k, v in zip(s[config.PRICE_CODE_COL], s[config.PRICE_VALUE_COL])}
+
+
 # --- 1. Aggregate crime (all forces, incremental to bound memory) -------------
 def aggregate_national() -> tuple[pd.DataFrame, list[str]]:
     files = sorted(config.RAW_DIR.rglob("*-street.csv"))
@@ -159,6 +170,15 @@ def build_table(out: pd.DataFrame, boundaries: dict, n_months: int) -> pd.DataFr
         out[f"p_{code}"] = base.rank(pct=True).round(3)  # national percentile, per bundle
         _log(f"  [{key}] cutoff {extreme:.0f}/1,000 → {int(out[f'h_{code}'].sum())} high-rate")
     _log(f"  low-pop flagged: {int(out['low_pop_flag'].sum())} / {len(out)}")
+
+    # Price layer (separate dimension; direct 2011↔2021 code match).
+    pmap = load_price()
+    out["price"] = out.index.map(pmap)
+    out["price_pctl"] = out["price"].rank(pct=True).round(3)  # pricier = higher
+    n_priced = int(out["price"].notna().sum())
+    if n_priced:
+        _log(f"  price: {n_priced}/{len(out)} LSOAs matched ({100*n_priced/len(out):.0f}%); "
+             f"median £{int(out['price'].dropna().median()):,}")
     return out
 
 
@@ -173,8 +193,10 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
         if r is None:
             continue
         pop = None if pd.isna(r["pop"]) else int(r["pop"])
+        price = None if pd.isna(r["price"]) else int(r["price"])
+        price_pctl = None if pd.isna(r["price_pctl"]) else float(r["price_pctl"])
         props = {"lsoa21cd": code, "lsoa21nm": r["lsoa21nm"], "pop": pop,
-                 "low_pop_flag": bool(r["low_pop_flag"])}
+                 "low_pop_flag": bool(r["low_pop_flag"]), "price": price, "price_pctl": price_pctl}
         for c in BUNDLE_CODE.values():   # per-bundle scalars: total, rate, percentile, high-rate
             props[f"t_{c}"] = int(r[f"t_{c}"])
             props[f"r_{c}"] = None if pd.isna(r[f"r_{c}"]) else float(r[f"r_{c}"])
@@ -184,7 +206,7 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
         feats.append(f)
         # compact details (fetched lazily on click): arrays in the shared category/month order
         details[code] = {"c": [int(r["by_category"][c]) for c in cats],
-                         "m": list(r["monthly_counts"])}
+                         "m": list(r["monthly_counts"]), "price": price, "price_pctl": price_pctl}
 
     config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
     config.NATIONAL_SLIM_GEOJSON.write_text(
@@ -193,7 +215,8 @@ def write_outputs(out: pd.DataFrame, boundaries: dict, n_months: int, months: li
     config.NATIONAL_DETAILS.write_text(json.dumps({
         "categories": cats, "months": months, "default_bundle": config.DEFAULT_BUNDLE,
         "bundles": config.CATEGORY_BUNDLES, "window_months": n_months,
-        "low_pop_threshold": config.LOW_POP_THRESHOLD, "lsoa": details,
+        "low_pop_threshold": config.LOW_POP_THRESHOLD, "price_label": config.PRICE_LABEL,
+        "lsoa": details,
     }, allow_nan=False))
     _log(f"Wrote {len(feats):,} features → {config.NATIONAL_SLIM_GEOJSON.name} "
          f"({config.NATIONAL_SLIM_GEOJSON.stat().st_size/1e6:.0f} MB) and "

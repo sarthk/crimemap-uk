@@ -88,6 +88,10 @@
     .reading{font-size:12.5px;line-height:1.55;color:var(--soft);margin:13px 0 6px}
     .trend{font-size:12px;margin:0 0 4px}
     .trend .dir{font-weight:680} .trend .up{color:#c0492f} .trend .down{color:#2e7d54} .trend .flat{color:var(--soft)}
+    .price-box{display:flex;flex-direction:column;gap:2px;margin:13px 0;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:11px}
+    .price-box .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
+    .price-box .pv{font-family:var(--mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+    .price-box .muted{font-size:10.5px}
     .legend .ramp{height:10px;border-radius:999px;margin:4px 0 6px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5))}
     .legend .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)}
     .legend .chips{display:flex;gap:14px;margin-top:12px}
@@ -248,6 +252,7 @@
       ${cav?`<div class="callout ${cav.cls}">${cav.cls==='low'?'':warn}<span>${cav.t}</span></div>`:''}
       <p class="reading">${readingText(p, active)}</p>
       <div id="trend" class="trend"><span class="muted">trend…</span></div>
+      <div id="price" class="price-box"><span class="muted">price…</span></div>
       <p class="eyebrow" style="margin:16px 0 9px">Breakdown · ${b.label.toLowerCase()}</p>
       <div id="bars" class="bars"><p class="muted">loading…</p></div>
       <p class="eyebrow" style="margin:16px 0 0">Monthly · residential-risk bundle</p>
@@ -263,6 +268,10 @@
       $('#spark').innerHTML = spark(rec.m) + `<div class="cap">Last ${d.window_months} months · most recent at right</div>`;
       const ti = trendInfo(rec.m), te = $('#trend');
       if (te) te.innerHTML = ti ? `<span class="dir ${ti.cls}">${ti.arrow} ${ti.label}</span> <span class="muted">— ${ti.detail} · residential-risk</span>` : '';
+      const pb = $('#price');
+      if (pb) pb.innerHTML = rec.price != null
+        ? `<span class="k">Median house price</span><b class="pv">£${fmt(rec.price)}</b><span class="muted">${d.price_label || ''}${rec.price_pctl != null ? ` · pricier than ${Math.round(rec.price_pctl*100)}% of areas` : ''}</span>`
+        : `<span class="muted">Median house price — not published for this area (few sales, or the LSOA changed since 2011).</span>`;
     });
   }
 

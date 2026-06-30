@@ -26,6 +26,22 @@ NATIONAL_PMTILES = WEB_DATA_DIR / "national.pmtiles"            # vector tiles (
 NATIONAL_DETAILS = WEB_DATA_DIR / "national-details.json"       # code → {by_category, monthly} (committed)
 PMTILES_LAYER = "lsoa"                                          # tippecanoe -l → MapLibre source-layer
 
+# --- Price layer (ONS HPSSA Dataset 46 — median price paid by LSOA) -----------
+# A SEPARATE, transparent layer (never blended into a black-box "area score").
+# Caveat: 2011-LSOA keyed, final release = year ending Mar 2023. We join by direct
+# code match (~92% of 2021 LSOAs); changed/suppressed LSOAs simply show no price.
+# Fresher/2021-native would mean computing medians from Land Registry pp-complete
+# (~5.5 GB) + a postcode→2021-LSOA lookup — deferred until the layer earns it.
+HPSSA_PRICE_ZIP_URL = ("https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/housing/"
+    "datasets/medianpricepaidbylowerlayersuperoutputareahpssadataset46/current/"
+    "hpssadataset46medianpricepaidforresidentialpropertiesbylsoa.zip")
+PRICE_XLS = INTERIM_DIR / "hpssa46-median-price-lsoa.xls"
+PRICE_SHEET = "1a"
+PRICE_HEADER_ROW = 5
+PRICE_CODE_COL = "LSOA code"
+PRICE_VALUE_COL = "Year ending Mar 2023"
+PRICE_LABEL = "ONS · median sold price · year to Mar 2023"
+
 # --- Region (Phase 1) ---------------------------------------------------------
 # police.uk force identifier as it appears in bulk-CSV filenames:
 #   <YYYY-MM>/<YYYY-MM>-<FORCE_ID>-street.csv
